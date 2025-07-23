@@ -5,7 +5,10 @@ set -e
 APP_DIR="/opt/feliciadl"
 LAUNCHER="/usr/bin/feliciadl"
 DESKTOP_FILE="$HOME/.local/share/applications/feliciadl.desktop"
-CONFIG_FILE="$HOME/.config/feliciadl/config.json"
+CONFIG_DIR="$HOME/.config/feliciadl"
+CONFIG_FILE="$CONFIG_DIR/config.json"
+AUTOMATIC_FILE_SRC="automatic.json"
+AUTOMATIC_FILE_DEST="$CONFIG_DIR/automatic.json"
 DEFAULT_DOWNLOAD_DIR="$HOME/Downloads/FeliciaDL"
 ICON_PATH="$APP_DIR/assets/icon.png"
 
@@ -77,14 +80,29 @@ EOF
   update-desktop-database "$(dirname "$DESKTOP_FILE")"
 }
 
-create_config_if_missing() {
-  echo -e "\nChecking for config.json..."
+create_config_files_if_missing() {
+  echo -e "\nEnsuring config files exist..."
+
+  mkdir -p "$CONFIG_DIR"
+
+  # Main config.json
   if [ ! -f "$CONFIG_FILE" ]; then
     echo "Creating default config.json"
-    mkdir -p "$(dirname "$CONFIG_FILE")"
     echo "{\"download_dir\": \"$DEFAULT_DOWNLOAD_DIR\", \"theme\": \"darkly\"}" > "$CONFIG_FILE"
   else
-    echo "Config.json already exists, preserving user settings."
+    echo "✔ config.json already exists, preserving user settings."
+  fi
+
+  # automatic.json
+  if [ -f "$AUTOMATIC_FILE_SRC" ]; then
+    if [ ! -f "$AUTOMATIC_FILE_DEST" ]; then
+      echo "Copying automatic.json to config directory..."
+      cp "$AUTOMATIC_FILE_SRC" "$AUTOMATIC_FILE_DEST"
+    else
+      echo "✔ automatic.json already exists, preserving user settings."
+    fi
+  else
+    echo "⚠️  automatic.json not found in source directory, skipping copy."
   fi
 }
 
@@ -100,5 +118,5 @@ install_dependencies
 install_app_files
 install_launcher
 install_desktop_entry
-create_config_if_missing
+create_config_files_if_missing
 print_footer
