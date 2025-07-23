@@ -46,13 +46,14 @@ def ensure_ytdlp_config():
 
 def ensure_dirs(base):
     for folder in [
-        base,
-        os.path.join(base, "downloaded/youtube-dl-video"),
-        os.path.join(base, "downloaded/youtube-dl-audio"),
-        os.path.join(base, "downloaded/spotdl"),
-        os.path.join(base, "downloaded/other-videos"),
-        os.path.join(base, "log")
-    ]:
+    base,
+    os.path.join(base, "downloaded/youtube-dl-video"),
+    os.path.join(base, "downloaded/youtube-dl-audio"),
+    os.path.join(base, "downloaded/spotdl"),
+    os.path.join(base, "downloaded/gallery-dl"),  # ✅ <-- Add this line
+    os.path.join(base, "downloaded/other-videos"),
+    os.path.join(base, "log")
+]:
         os.makedirs(folder, exist_ok=True)
     ensure_ytdlp_config()
 
@@ -60,6 +61,7 @@ def build_command(tool, url, base):
     base_video = os.path.join(base, "downloaded/youtube-dl-video")
     base_audio = os.path.join(base, "downloaded/youtube-dl-audio")
     base_spot = os.path.join(base, "downloaded/spotdl")
+    base_gallery = os.path.join(base, "downloaded/gallery-dl")
     base_other = os.path.join(base, "downloaded/other-videos")
     yt_base = ["yt-dlp", "--config-location", YTDLP_CONFIG_PATH]
 
@@ -96,7 +98,7 @@ def build_command(tool, url, base):
             "-P", base_audio,
             url
         ],
-        "Gallery-DL": ["gallery-dl", "-d", os.path.join(base, "downloaded"), url],
+        "Gallery-DL": ["gallery-dl", "-d", base_gallery, url],
         "Spot-DL": ["spotdl", "download", url, "--output", base_spot],
         "Other-Videos": ["yt-dlp", "--config-location", YTDLP_CONFIG_PATH, "-o", "%(title)s.%(ext)s", "-P", base_other, url],
     }[resolved_tool]
@@ -144,7 +146,7 @@ def run_download():
                 stop_button.destroy(),
                 row.pack_forget()
             ])
-        return
+            return
         
         # Update status label to show backend if automatic
         label_text = f"⏳ {tool} ({resolved_tool}): {url}" if tool == "Automatic" else f"⏳ {tool}: {url}"
