@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=FeliciaDL
+Exec=feliciadl
+Icon=utilities-terminal
+Terminal=false
+Categories=AudioVideo;Downloader;Utility;
+Comment=Media downloader using yt-dlp, gallery-dl, spotdl
+StartupNotify=true
