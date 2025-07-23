@@ -8,7 +8,7 @@ def is_terminal():
 
 def main():
     if is_terminal():
-        os.system("python3 /opt/feliciadl/downloader.py")
+        os.execv(sys.executable, ["python3", "/opt/feliciadl/downloader.py", *sys.argv[1:]])
     else:
         subprocess.Popen(["python3", "/opt/feliciadl/downloader_gui.py"])
 

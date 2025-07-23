@@ -6,10 +6,11 @@ import json
 from datetime import datetime
 import argparse
 
+CONFIG_DIR = os.path.expanduser("~/.config/feliciadl")
+CONFIG_PATH = os.path.join(CONFIG_DIR, "config.json")
+YTDLP_CONFIG_PATH = os.path.join(CONFIG_DIR, "yt-dlp.conf")
 DEFAULT_PATH = os.path.expanduser("~/Downloads/FeliciaDL")
-CONFIG_PATH = "/opt/feliciadl/config.json"
 
-# Load config or create default
 def load_config():
     if os.path.exists(CONFIG_PATH):
         with open(CONFIG_PATH, "r") as f:
@@ -17,7 +18,7 @@ def load_config():
     return {"download_dir": DEFAULT_PATH}
 
 def save_config(config):
-    os.makedirs(os.path.dirname(CONFIG_PATH), exist_ok=True)
+    os.makedirs(CONFIG_DIR, exist_ok=True)
     with open(CONFIG_PATH, "w") as f:
         json.dump(config, f)
 
@@ -31,6 +32,11 @@ def ensure_dirs(base):
     ]
     for path in folders:
         os.makedirs(path, exist_ok=True)
+
+    # Ensure yt-dlp.conf exists
+    if not os.path.exists(YTDLP_CONFIG_PATH):
+        with open(YTDLP_CONFIG_PATH, "w") as f:
+            f.write("# yt-dlp config file\n")
 
 def log_action(base, tool, url):
     log_path = os.path.join(base, "log", "download.log")
@@ -77,13 +83,28 @@ Examples:
     base = config["download_dir"]
     ensure_dirs(base)
 
+    yt_dlp_base = ["yt-dlp", "--config-location", YTDLP_CONFIG_PATH]
+    cmd = []
+    url = ""
+    tool = ""
+
     if args.yt_dlp_video:
         tool = "Youtube-DL-Video"
-        cmd = ["yt-dlp", "-P", os.path.join(base, "downloaded/youtube-dl-video"), args.yt_dlp_video]
+        cmd = yt_dlp_base + [
+            "-f", "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]",
+            "-o", "%(title)s.%(ext)s",
+            "-P", os.path.join(base, "downloaded/youtube-dl-video"),
+            args.yt_dlp_video
+        ]
         url = args.yt_dlp_video
     elif args.yt_dlp_audio:
         tool = "Youtube-DL-Audio"
-        cmd = ["yt-dlp", "-x", "--audio-format", "mp3", "-P", os.path.join(base, "downloaded/youtube-dl-audio"), args.yt_dlp_audio]
+        cmd = yt_dlp_base + [
+            "-x", "--audio-format", "mp3",
+            "-o", "%(title)s.%(ext)s",
+            "-P", os.path.join(base, "downloaded/youtube-dl-audio"),
+            args.yt_dlp_audio
+        ]
         url = args.yt_dlp_audio
     elif args.gallery_dl:
         tool = "Gallery-DL"
@@ -95,7 +116,11 @@ Examples:
         url = args.spotdl
     elif args.videoother:
         tool = "Other-Videos"
-        cmd = ["yt-dlp", args.videoother]
+        cmd = yt_dlp_base + [
+            "-o", "%(title)s.%(ext)s",
+            "-P", os.path.join(base, "downloaded/other-videos"),
+            args.videoother
+        ]
         url = args.videoother
     else:
         print("❌ No valid tool specified.")
