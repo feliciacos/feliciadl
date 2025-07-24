@@ -1,125 +1,168 @@
 # FeliciaDL
 
-FeliciaDL is a simple graphical and command-line downloader built for Linux. It wraps powerful tools like `yt-dlp`, `gallery-dl`, and `spotdl` into a unified, user-friendly interface — both GUI and CLI.
+**FeliciaDL** is a simple graphical **and** command-line downloader built for Linux. It wraps powerful tools like `yt-dlp`, `gallery-dl`, and `spotdl` into a unified, user-friendly interface.
+
+Whether you're a CLI nerd or prefer clicking buttons, FeliciaDL has you covered.
+
+---
 
 ## Features
 
-- Download YouTube videos or extract audio using `yt-dlp`
-- Download music tracks from Spotify using `spotdl`
-- Download image galleries from supported sites using `gallery-dl`
-- Clean GUI with theme selector and folder controls
-- CLI interface with clearly named flags
-- Persistent settings stored in `~/.config/feliciadl/`
-- Output log with auto-scroll and command history
-- Smart output organization (no brace-named folders)
+- Download YouTube videos or audio using `yt-dlp`
+- Download Spotify tracks and albums using `spotdl`
+- Download galleries and supported sites via `gallery-dl`
+- Easy theme switching (`ttkbootstrap` skins)
+- Persistent settings and logs
+- Clean folder layout with automatic subdirectory sorting
+- Scrollable job status with real-time progress bars
+- Automatic downloader detection via `automatic.json`
+- Fully native Linux shell integration (Start Menu & launcher)
 
 ---
 
 ## Installation
 
-Tested on Arch Linux. Installation is handled via a single script:
+Tested on **Arch** and **Ubuntu 24+**. Installation is handled via a single script:
 
 ```bash
 git clone https://github.com/feliciacos/feliciadl
 cd feliciadl
 chmod +x install.sh
 ./install.sh
-```
 
-This script:
+What it does:
 
-- Installs dependencies (`yt-dlp`, `gallery-dl`, `spotdl`, `ffmpeg`, `tk`, `zenity`, `ttkbootstrap`)
-- Copies your app files to `/opt/feliciadl/`
-- Installs a launcher to `/usr/bin/feliciadl`
-- Registers a `.desktop` entry for the Start Menu
-- Creates an initial config if none exists
+    Installs system dependencies:
 
----
+        yt-dlp, spotdl, gallery-dl, ffmpeg, tk, zenity, and ttkbootstrap
 
-## Usage
+    Copies application files to /opt/feliciadl/
 
-### CLI
+    Installs a launcher to /usr/bin/feliciadl
 
-```bash
+    Adds a Start Menu entry (~/.local/share/applications/feliciadl.desktop)
+
+    Creates a config file at ~/.config/feliciadl/ if missing
+
+    Installs an automatic.json matcher for automatic backend routing
+
+Usage
+CLI Mode
+
 feliciadl --yt-dlp-video <url>
 feliciadl --yt-dlp-audio <url>
 feliciadl --spotdl <url>
 feliciadl --gallery-dl <url>
 feliciadl --videoother <url>
-```
 
-#### Optional arguments:
+Optional arguments:
 
-- `--downloadpath <path>` — override the default folder
-- `--resetpath` — reset to `~/Downloads/FeliciaDL`
+    --downloadpath <path> — override the configured output folder
 
-#### Example:
+    --resetpath — reset folder to ~/Downloads/FeliciaDL
 
-```bash
-feliciadl --yt-dlp-audio https://youtube.com/watch?v=abc123 --downloadpath /mnt/media
-```
+Example:
 
-### GUI
+feliciadl --spotdl https://open.spotify.com/track/abc123 --downloadpath /mnt/media
 
-Launch from the terminal:
-```bash
+GUI Mode
+
+Launch from terminal:
+
 feliciadl
-```
 
-Or find **FeliciaDL** in your Start Menu under **Multimedia** or **Utilities**.
+Or find FeliciaDL in your system menu under Multimedia or Utilities.
+GUI Features:
 
----
+    Tool selection: yt-dlp, spotdl, gallery-dl, or automatic detection
 
-## Configuration
+    Bulk Mode: Download many URLs (line-separated)
 
-Stored in:
+    Progress tracking per job (✅/❌)
 
-```
+    Console output + scrollable status window
+
+    Theming via dropdown (light/dark skins)
+
+    Configurable download folder
+
+    Logs visible via GUI
+
+⚙️ Configuration
+
+All user preferences and state are stored here:
+
 ~/.config/feliciadl/config.json
-```
 
-- `download_dir` — user-selected output folder
-- `theme` — persistent GUI theme (e.g. `darkly`, `cyborg`, etc.)
+Default contents:
 
-Logs are written to:
+{
+  "download_dir": "~/Downloads/FeliciaDL",
+  "theme": "darkly"
+}
 
-```
-<download_path>/FeliciaDL/log/download.log
-```
+Automatic backend mapping is handled by:
 
----
+~/.config/feliciadl/automatic.json
 
-## Folder Layout
+You can add domain mappings like:
 
-```
+{
+  "yt-dlp": ["youtube.com", "youtu.be", "rumble.com"],
+  "gallery-dl": ["coomer.su", "hentai-cosplay-xxx.com"],
+  "spotdl": ["spotify.com"]
+}
+
+🗂 Folder Layout
+
 ~/Downloads/FeliciaDL/
 ├── downloaded/
 │   ├── youtube-dl-video/
 │   ├── youtube-dl-audio/
+│   ├── gallery-dl/
 │   ├── spotdl/
 │   └── other-videos/
 └── log/
     └── download.log
-```
+
+🧹 Uninstall (WIP)
+
+A script to fully uninstall FeliciaDL is included:
+
+./uninstall.sh
+
+It will:
+
+    Remove /opt/feliciadl
+
+    Remove /usr/bin/feliciadl
+
+    Remove desktop shortcut
+
+    Optionally prompt to remove your config and logs
+
+    ⚠️ Note: This uninstall script is untested on all platforms. Please use at your own risk.
+
+Dependencies
+
+    yt-dlp
+
+    gallery-dl
+
+    spotDL
+
+    ffmpeg
+
+    ttkbootstrap
+
+    tkinter, zenity, pipx (used for GUI and packaging)
+
+📄 License
+
+MIT License. See the LICENSE file.
+👤 Author
+
+Created by @feliciacos
+
 
 ---
-
-## Dependencies
-
-- [yt-dlp](https://github.com/yt-dlp/yt-dlp)
-- [spotDL](https://github.com/spotDL/spotify-downloader)
-- [gallery-dl](https://github.com/mikf/gallery-dl)
-- [ffmpeg](https://ffmpeg.org/)
-- `tkinter`, `zenity`, and [`ttkbootstrap`](https://github.com/israel-dryer/ttkbootstrap)
-
----
-
-## License
-
-MIT License. See the [LICENSE](LICENSE) file.
-
----
-
-## Author
-
-Created by [@feliciacos](https://github.com/feliciacos)

@@ -47,11 +47,8 @@ install_python_tools() {
   pipx install gallery-dl || true
   pipx install spotdl || true
 
-  echo -e "\n📦 Installing ttkbootstrap..."
-  python3 -m venv /tmp/feliciadl-venv
-  /tmp/feliciadl-venv/bin/pip install --no-cache-dir ttkbootstrap
-  sudo /tmp/feliciadl-venv/bin/pip install ttkbootstrap
-  rm -rf /tmp/feliciadl-venv
+  echo -e "\n📦 Installing ttkbootstrap into user site..."
+  sudo python3 -m pip install ttkbootstrap --break-system-packages
 }
 
 symlink_binaries() {
