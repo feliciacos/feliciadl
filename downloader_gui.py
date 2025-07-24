@@ -178,7 +178,7 @@ def run_single_download(input_url, tool, sync=False, on_finish=None):
                 root.after(100, scroll_status_to_bottom)
             ])
             if on_finish:
-                on_finish()
+                root.after(0, on_finish)
             return
 
         label_text = f"⏳ {tool} ({resolved_tool}): {url}" if tool == "Automatic" else f"⏳ {tool}: {url}"
@@ -255,8 +255,13 @@ def run_single_download(input_url, tool, sync=False, on_finish=None):
         t = threading.Thread(target=thread_target, daemon=True)
         active_threads.append(t)
         t.start()
+        
+    if not any(t.is_alive() for t in active_threads):
+        root.after(0, unlock_controls)
+
 
 def run_download():
+    lock_controls()
     tool = tool_selector.get()
     text = url_box.get("1.0", tk.END).strip() if bulk_mode.get() else url_entry.get().strip()
     urls = [u.strip() for u in text.splitlines() if u.strip()]
@@ -356,20 +361,20 @@ def run_download():
                 root.after(0, update_progress)
                 time.sleep(5)
 
-            root.after(0, lambda: [
-                bar.stop(),
-                bar.config(mode="determinate", value=100),
-                stop_button.grid_forget(),  # Hide stop button at the end
-                label.config(text=f"✅ All {total} downloads completed."),
+            def on_complete():
+                bar.stop()
+                bar.config(mode="determinate", value=100)
+                stop_button.grid_forget()
+                label.config(text=f"✅ All {total} downloads completed.")
                 scroll_status_to_bottom()
-            ])
+                unlock_controls()
+
+            root.after(0, on_complete)
 
         threading.Thread(target=bulk_worker, daemon=True).start()
-
+        
     else:
-        run_single_download(urls[0], tool)
-
-
+        run_single_download(urls[0], tool, on_finish=unlock_controls)
 
 def toggle_bulk_mode():
     for widget in url_input_frame.winfo_children():
@@ -433,6 +438,18 @@ def on_theme_change(event):
     root.destroy()
     os.execl(sys.executable, sys.executable, *sys.argv)
 
+def lock_controls():
+    theme_selector.config(state="disabled")
+    download_entry.config(state="disabled")
+    change_button.config(state="disabled")
+    reset_button.config(state="disabled")
+
+def unlock_controls():
+    theme_selector.config(state="readonly")
+    download_entry.config(state="normal")
+    change_button.config(state="normal")
+    reset_button.config(state="normal")
+
 # --- INIT ---
 config = load_config()
 theme = config.get("theme", DEFAULT_THEME)
@@ -481,6 +498,7 @@ theme_selector = ttk.Combobox(theme_frame, values=tb.Style().theme_names(), stat
 theme_selector.set(theme)
 theme_selector.pack(side=tk.LEFT, padx=5)
 theme_selector.bind("<<ComboboxSelected>>", on_theme_change)
+
 ttk.Button(theme_frame, text="Open Config Folder", command=open_config_folder).pack(side=tk.LEFT, padx=10)
 ttk.Button(theme_frame, text="Open Logs", command=lambda: open_folder(os.path.join(download_dir.get(), "log"))).pack(side=tk.LEFT)
 
@@ -528,12 +546,18 @@ url_btn_frame = ttk.Frame(right_frame)
 url_btn_frame.pack(anchor="w", pady=8)
 ttk.Button(url_btn_frame, text="Download", command=run_download).pack(side=tk.LEFT, padx=0)
 ttk.Button(url_btn_frame, text="Open Download Folder", command=lambda: open_folder(download_dir.get())).pack(side=tk.LEFT, padx=5)
-
 folder_frame = ttk.Frame(right_frame)
 folder_frame.pack(fill=tk.X, pady=(5, 10))
-ttk.Entry(folder_frame, textvariable=download_dir).pack(side=tk.LEFT, fill=tk.X, expand=True)
-ttk.Button(folder_frame, text="Change", command=browse_folder).pack(side=tk.LEFT, padx=5)
-ttk.Button(folder_frame, text="Reset", command=reset_folder).pack(side=tk.LEFT)
+
+download_entry = ttk.Entry(folder_frame, textvariable=download_dir)
+download_entry.pack(side=tk.LEFT, fill=tk.X, expand=True)
+
+change_button = ttk.Button(folder_frame, text="Change", command=browse_folder)
+change_button.pack(side=tk.LEFT, padx=5)
+
+reset_button = ttk.Button(folder_frame, text="Reset", command=reset_folder)
+reset_button.pack(side=tk.LEFT)
+
 
 # Console output
 output_box = tk.Text(right_frame, height=10, state=tk.DISABLED)

@@ -30,6 +30,14 @@ cd feliciadl
 chmod +x install.sh
 ./install.sh
 
+OR
+
+wget https://github.com/feliciacos/feliciadl/archive/refs/heads/main.zip -O feliciadl.zip
+unzip feliciadl.zip
+cd feliciadl-main
+chmod +x install.sh
+./install.sh
+
 What it does:
 
     Installs system dependencies:
