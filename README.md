@@ -24,7 +24,7 @@ Whether you're a CLI nerd or prefer clicking buttons, FeliciaDL has you covered.
 
 Tested on **Arch** and **Ubuntu 24+**. Installation is handled via a single script:
 
-```bash
+bash
 git clone https://github.com/feliciacos/feliciadl
 cd feliciadl
 chmod +x install.sh
