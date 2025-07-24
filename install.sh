@@ -1,5 +1,4 @@
 #!/bin/bash
-
 set -e
 
 APP_DIR="/opt/feliciadl"
@@ -11,6 +10,8 @@ AUTOMATIC_FILE_SRC="automatic.json"
 AUTOMATIC_FILE_DEST="$CONFIG_DIR/automatic.json"
 DEFAULT_DOWNLOAD_DIR="$HOME/Downloads/FeliciaDL"
 ICON_PATH="$APP_DIR/assets/icon.png"
+PIPX_BIN="$HOME/.local/bin"
+SYSTEM_BIN="/usr/local/bin"
 
 print_header() {
   echo -e "\n======================================"
@@ -18,31 +19,59 @@ print_header() {
   echo "======================================"
 }
 
-install_dependencies() {
-  echo -e "\nInstalling system dependencies..."
-  if command -v yay &> /dev/null; then
-    yay -S --needed yt-dlp ffmpeg tk python-pipx zenity python-ttkbootstrap --noconfirm
-  elif command -v apt &> /dev/null; then
-    sudo apt update
-    sudo apt install -y python3 python3-pip python3-tk ffmpeg zenity
-    python3 -m pip install --user pipx
-    python3 -m pipx ensurepath
-    python3 -m pip install --user ttkbootstrap
-  else
-    echo "Unsupported package manager. Please install yt-dlp, ffmpeg, tk, pipx, zenity, and ttkbootstrap manually."
+check_python() {
+  if ! command -v python3 &> /dev/null; then
+    echo "❌ Python3 is not installed. Please install Python 3 before proceeding."
     exit 1
   fi
+}
+
+install_dependencies() {
+  echo -e "\n📦 Installing system dependencies..."
+  if command -v yay &> /dev/null; then
+    yay -S --needed yt-dlp ffmpeg tk zenity python-pipx python-ttkbootstrap --noconfirm
+  elif command -v apt &> /dev/null; then
+    sudo apt update
+    sudo apt install -y python3 python3-pip python3-venv pipx ffmpeg yt-dlp python3-tk zenity python3-pil.imagetk
+    export PATH="$HOME/.local/bin:$PATH"
+  else
+    echo "❌ Unsupported package manager. Please install the required packages manually."
+    exit 1
+  fi
+}
+
+install_python_tools() {
+  echo -e "\n📦 Installing Python apps with pipx..."
+  pipx ensurepath
 
   pipx install gallery-dl || true
   pipx install spotdl || true
+
+  echo -e "\n📦 Installing ttkbootstrap..."
+  python3 -m venv /tmp/feliciadl-venv
+  /tmp/feliciadl-venv/bin/pip install --no-cache-dir ttkbootstrap
+  sudo /tmp/feliciadl-venv/bin/pip install ttkbootstrap
+  rm -rf /tmp/feliciadl-venv
+}
+
+symlink_binaries() {
+  echo -e "\n🔗 Symlinking pipx binaries..."
+  for bin in gallery-dl spotdl; do
+    if [ -f "$PIPX_BIN/$bin" ]; then
+      sudo ln -sf "$PIPX_BIN/$bin" "$SYSTEM_BIN/$bin"
+      echo "✔ Linked $bin → $SYSTEM_BIN/$bin"
+    else
+      echo "⚠️  $bin not found in $PIPX_BIN"
+    fi
+  done
 }
 
 install_app_files() {
-  echo -e "\nCopying application files to $APP_DIR..."
+  echo -e "\n📁 Copying application files to $APP_DIR..."
   sudo mkdir -p "$APP_DIR"
   sudo cp downloader.py downloader_gui.py "$APP_DIR/"
 
-  echo "Copying assets..."
+  echo "📁 Copying assets..."
   if [ -d "assets" ]; then
     sudo mkdir -p "$APP_DIR/assets"
     sudo cp -r assets/* "$APP_DIR/assets/"
@@ -50,20 +79,16 @@ install_app_files() {
 }
 
 install_launcher() {
-  echo -e "\nInstalling launcher to $LAUNCHER..."
+  echo -e "\n🔗 Installing launcher to $LAUNCHER..."
   sudo cp feliciadl "$LAUNCHER"
   sudo chmod +x "$LAUNCHER"
 }
 
 install_desktop_entry() {
-  echo -e "\nRegistering desktop shortcut..."
+  echo -e "\n🖥️ Registering desktop shortcut..."
   mkdir -p "$(dirname "$DESKTOP_FILE")"
-
-  if [ -f "$ICON_PATH" ]; then
-    ICON_LINE="Icon=$ICON_PATH"
-  else
-    ICON_LINE="Icon=utilities-terminal"
-  fi
+  ICON_LINE="Icon=utilities-terminal"
+  [ -f "$ICON_PATH" ] && ICON_LINE="Icon=$ICON_PATH"
 
   cat <<EOF > "$DESKTOP_FILE"
 [Desktop Entry]
@@ -81,25 +106,22 @@ EOF
 }
 
 create_config_files_if_missing() {
-  echo -e "\nEnsuring config files exist..."
-
+  echo -e "\n⚙️  Ensuring config files exist..."
   mkdir -p "$CONFIG_DIR"
 
-  # Main config.json
   if [ ! -f "$CONFIG_FILE" ]; then
     echo "Creating default config.json"
     echo "{\"download_dir\": \"$DEFAULT_DOWNLOAD_DIR\", \"theme\": \"darkly\"}" > "$CONFIG_FILE"
   else
-    echo "✔ config.json already exists, preserving user settings."
+    echo "✔ config.json already exists."
   fi
 
-  # automatic.json
   if [ -f "$AUTOMATIC_FILE_SRC" ]; then
     if [ ! -f "$AUTOMATIC_FILE_DEST" ]; then
       echo "Copying automatic.json to config directory..."
       cp "$AUTOMATIC_FILE_SRC" "$AUTOMATIC_FILE_DEST"
     else
-      echo "✔ automatic.json already exists, preserving user settings."
+      echo "✔ automatic.json already exists."
     fi
   else
     echo "⚠️  automatic.json not found in source directory, skipping copy."
@@ -107,14 +129,17 @@ create_config_files_if_missing() {
 }
 
 print_footer() {
-  echo -e "\nFeliciaDL installed successfully!"
-  echo "Run in terminal: feliciadl"
-  echo "Or launch from Start Menu: FeliciaDL"
+  echo -e "\n✅ FeliciaDL installed successfully!"
+  echo "📦 Run in terminal: feliciadl"
+  echo "📂 Or launch from Start Menu: FeliciaDL"
 }
 
-# Run all steps
+# Run installation steps
 print_header
+check_python
 install_dependencies
+install_python_tools
+symlink_binaries
 install_app_files
 install_launcher
 install_desktop_entry

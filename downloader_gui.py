@@ -9,15 +9,17 @@ import json
 import webbrowser
 import threading
 import sys
+import time
 
 CONFIG_DIR = os.path.expanduser("~/.config/feliciadl")
 CONFIG_PATH = os.path.join(CONFIG_DIR, "config.json")
 YTDLP_CONFIG_PATH = os.path.join(CONFIG_DIR, "yt-dlp.conf")
-DEFAULT_PATH = os.path.expanduser("~/Downloads/FeliciaDL")
 AUTOMATIC_MAP_PATH = os.path.join(CONFIG_DIR, "automatic.json")
+DEFAULT_PATH = os.path.expanduser("~/Downloads/FeliciaDL")
 APP_ICON_PATH = "/opt/feliciadl/assets/icon.png"
 APP_LOGO_PATH = "/opt/feliciadl/assets/logo.png"
 DEFAULT_THEME = "flatly"
+
 
 def load_config():
     try:
@@ -26,10 +28,12 @@ def load_config():
     except:
         return {"download_dir": DEFAULT_PATH, "theme": DEFAULT_THEME}
 
+
 def save_config(config):
     os.makedirs(CONFIG_DIR, exist_ok=True)
     with open(CONFIG_PATH, "w") as f:
         json.dump(config, f)
+
 
 def load_automatic_mapping():
     try:
@@ -38,24 +42,27 @@ def load_automatic_mapping():
     except:
         return {}
 
+
 def ensure_ytdlp_config():
     os.makedirs(CONFIG_DIR, exist_ok=True)
     if not os.path.exists(YTDLP_CONFIG_PATH):
         with open(YTDLP_CONFIG_PATH, "w") as f:
             f.write("# yt-dlp config\n# Example: --cookies cookies.txt\n")
 
+
 def ensure_dirs(base):
     for folder in [
-    base,
-    os.path.join(base, "downloaded/youtube-dl-video"),
-    os.path.join(base, "downloaded/youtube-dl-audio"),
-    os.path.join(base, "downloaded/spotdl"),
-    os.path.join(base, "downloaded/gallery-dl"),  # ✅ <-- Add this line
-    os.path.join(base, "downloaded/other-videos"),
-    os.path.join(base, "log")
-]:
+        base,
+        os.path.join(base, "downloaded/youtube-dl-video"),
+        os.path.join(base, "downloaded/youtube-dl-audio"),
+        os.path.join(base, "downloaded/spotdl"),
+        os.path.join(base, "downloaded/gallery-dl"),
+        os.path.join(base, "downloaded/other-videos"),
+        os.path.join(base, "log")
+    ]:
         os.makedirs(folder, exist_ok=True)
     ensure_ytdlp_config()
+
 
 def build_command(tool, url, base):
     base_video = os.path.join(base, "downloaded/youtube-dl-video")
@@ -66,24 +73,25 @@ def build_command(tool, url, base):
     yt_base = ["yt-dlp", "--config-location", YTDLP_CONFIG_PATH]
 
     resolved_tool = tool
-
     if tool == "Automatic":
-        domain = url.split("/")[2].lower()
+        try:
+            domain = url.split("/")[2].lower()
+        except IndexError:
+            return None, None
         matched = False
-    for backend, domains in automatic_map.items():
-        if any(d in domain for d in domains):
-            resolved_tool = {
-                "yt-dlp": "Youtube-DL-Video",
-                "gallery-dl": "Gallery-DL",
-                "spotdl": "Spot-DL"
-            }.get(backend, "Other-Videos")
-            matched = True
-            break
-
-    if not matched:
-        messagebox.showerror("Automatic Mode Error",
-            "Automatic mode not available for this URL.\nPlease use one of the supported templates.")
-        return None, None
+        for backend, domains in automatic_map.items():
+            if any(d in domain for d in domains):
+                resolved_tool = {
+                    "yt-dlp": "Youtube-DL-Video",
+                    "gallery-dl": "Gallery-DL",
+                    "spotdl": "Spot-DL"
+                }.get(backend, "Other-Videos")
+                matched = True
+                break
+        if not matched:
+            messagebox.showerror("Automatic Mode Error",
+                "Automatic mode not available for this URL.\nPlease use one of the supported templates.")
+            return None, None
 
     cmd = {
         "Youtube-DL-Video": yt_base + [
@@ -105,38 +113,60 @@ def build_command(tool, url, base):
 
     return cmd, resolved_tool
 
-    
+
 def log_to_console(text):
     output_box.config(state=tk.NORMAL)
     output_box.insert(tk.END, text + "\n")
     output_box.see(tk.END)
     output_box.config(state=tk.DISABLED)
 
+
+def scroll_status_to_bottom():
+    status_canvas.update_idletasks()
+    status_canvas.yview_moveto(1.0)
+
+def update_label_width(label_widget, parent_widget, reserved_right_px=180):
+    """Dynamically resize label width based on remaining space."""
+    parent_widget.update_idletasks()
+    parent_width = parent_widget.winfo_width()
+    if parent_width <= 1:
+        return
+    char_width = 8  # More realistic for ttk.Label
+    usable_width = max(100, parent_width - reserved_right_px)
+    width_chars = usable_width // char_width
+    label_widget.config(width=width_chars)
+
+
 active_threads = []
 
-def run_download():
-    input_url = url_entry.get().strip()
-    tool = tool_selector.get()
+
+def run_single_download(input_url, tool, sync=False, on_finish=None):
     base = download_dir.get()
+    outer_row = ttk.Frame(status_list)
+    outer_row.pack(fill=tk.X, pady=2)
+    root.after(100, scroll_status_to_bottom)
 
-    if not input_url:
-        messagebox.showerror("Missing URL", "Please enter a URL.")
-        return
+    # Grid layout with fixed width label and fixed right-aligned bar+button
+    outer_row.grid_columnconfigure(0, weight=1)  # Let column 0 (label) expand
+    outer_row.grid_columnconfigure(1, weight=0)
+    outer_row.grid_columnconfigure(2, weight=0)
 
-    url_entry.delete(0, tk.END)
-    root.geometry(f"{min(root.winfo_width() + 100, 1300)}x{min(root.winfo_height() + 50, 1000)}")
+    status_label = ttk.Label(
+        outer_row,
+        text=f"⏳ {tool}: {input_url}",
+        anchor="w",
+        justify="left",
+        width=67  # Adjust width based on your app’s size/font
+    )
+    resize_callbacks.append(lambda: update_label_width(status_label, outer_row))
+    stop_button = ttk.Button(outer_row, text="Stop")
+    bar = ttk.Progressbar(outer_row, mode="indeterminate", maximum=100)
 
-    row = ttk.Frame(right_frame)
-    row.pack(fill=tk.X, pady=2)
-    status_label = ttk.Label(row, text=f"⏳ {tool}: {input_url}", anchor="w")
-    status_label.pack(side=tk.LEFT, fill=tk.X, expand=True)
+    status_label.grid(row=0, column=0, sticky="w", padx=(0, 10))
+    stop_button.grid(row=0, column=1, sticky="e", padx=(5, 2))
+    bar.grid(row=0, column=2, sticky="e", padx=(2, 5))
 
-    bar = ttk.Progressbar(row, mode="indeterminate")
-    bar.pack(side=tk.RIGHT, padx=5)
     bar.start()
-
-    stop_button = ttk.Button(row, text="Stop")
-    stop_button.pack(side=tk.RIGHT, padx=5)
 
     def thread_target(url=input_url):
         cmd, resolved_tool = build_command(tool, url, base)
@@ -144,11 +174,13 @@ def run_download():
             root.after(0, lambda: [
                 bar.stop(),
                 stop_button.destroy(),
-                row.pack_forget()
+                outer_row.pack_forget(),
+                root.after(100, scroll_status_to_bottom)
             ])
+            if on_finish:
+                on_finish()
             return
-        
-        # Update status label to show backend if automatic
+
         label_text = f"⏳ {tool} ({resolved_tool}): {url}" if tool == "Automatic" else f"⏳ {tool}: {url}"
         root.after(0, lambda: status_label.config(text=label_text))
         ensure_dirs(base)
@@ -163,7 +195,11 @@ def run_download():
                     log_to_console(f"⛔ Stopped: {tool} → {url}")
                     root.after(0, lambda: status_label.config(text=f"⛔ Stopped: {tool}"))
                     bar.stop()
-                    root.after(0, stop_button.destroy)
+                    def preserve_button_space():
+                        placeholder = ttk.Label(outer_row, text="", width=6)
+                        placeholder.grid(row=0, column=1, sticky="e", padx=(5, 2))
+
+                    root.after(0, lambda: [stop_button.destroy(), preserve_button_space()])
 
             stop_button.config(command=stop_process)
 
@@ -176,20 +212,24 @@ def run_download():
 
             process.wait()
             root.after(0, bar.stop)
-            root.after(0, stop_button.destroy)
+            def preserve_button_space():
+                placeholder = ttk.Label(outer_row, text="", width=6)
+                placeholder.grid(row=0, column=1, sticky="e", padx=(5, 2))
 
-            if process.returncode == 0:
-                root.after(0, lambda: [
-                    status_label.config(text=f"✅ Finished: {tool}"),
-                    messagebox.showinfo("Download Complete", f"✅ {tool} finished:\n{url}"),
-                    root.after(10000, lambda: row.pack_forget())
-                ])
-            else:
-                root.after(0, lambda: [
-                    status_label.config(text=f"❌ Failed: {tool}"),
-                    messagebox.showerror("Download Failed", f"❌ {tool} failed:\n{url}"),
-                    root.after(10000, lambda: row.pack_forget())
-                ])
+            root.after(0, lambda: [stop_button.destroy(), preserve_button_space()])
+
+            final_status = "✅ Finished" if process.returncode == 0 else "❌ Failed"
+            log_func = messagebox.showinfo if process.returncode == 0 else messagebox.showerror
+            bar_mode = "determinate"
+            bar_value = 100 if process.returncode == 0 else 0
+
+            root.after(0, lambda: [
+                bar.stop(),
+                bar.config(mode=bar_mode, value=bar_value),
+                status_label.config(text=f"{final_status}: {tool} ({resolved_tool}): {url}"),
+                log_func("Download", f"{final_status}: {tool}\n{url}"),
+                scroll_status_to_bottom()
+            ])
 
             with open(log_path, "a") as f:
                 f.write(f"{tool} ({resolved_tool}): {url}\n")
@@ -202,15 +242,150 @@ def run_download():
                 status_label.config(text="❌ Exception"),
                 messagebox.showerror("Download Error", err),
                 log_to_console(err),
-                root.after(10000, lambda: row.pack_forget())
             ])
 
         if threading.current_thread() in active_threads:
             active_threads.remove(threading.current_thread())
+        if on_finish:
+            on_finish()
 
-    t = threading.Thread(target=thread_target, daemon=True)
-    active_threads.append(t)
-    t.start()
+    if sync:
+        thread_target()
+    else:
+        t = threading.Thread(target=thread_target, daemon=True)
+        active_threads.append(t)
+        t.start()
+
+def run_download():
+    tool = tool_selector.get()
+    text = url_box.get("1.0", tk.END).strip() if bulk_mode.get() else url_entry.get().strip()
+    urls = [u.strip() for u in text.splitlines() if u.strip()]
+    if not urls:
+        messagebox.showerror("Missing URL", "Please enter at least one URL.")
+        return
+
+    if bulk_mode.get():
+        url_box.delete("1.0", tk.END)
+    else:
+        url_entry.delete(0, tk.END)
+
+    base = download_dir.get()
+    ensure_dirs(base)
+    log_path = os.path.join(base, "log", "download.log")
+
+    if bulk_mode.get():
+        row = ttk.Frame(status_list)
+        row.pack(fill=tk.X, pady=2)
+        root.after(100, scroll_status_to_bottom)
+
+        # Create widgets using grid
+        label = ttk.Label(
+            row,
+            text="",
+            anchor="w",
+            justify="left",
+            width=67  # Same clipping effect for long lines in bulk
+        )
+        
+        resize_callbacks.append(lambda: update_label_width(label, row))
+        stop_button = ttk.Button(row, text="Stop")
+        bar = ttk.Progressbar(row, mode="indeterminate", maximum=100)
+
+        label.grid(row=0, column=0, sticky="w", padx=(0, 10))
+        stop_button.grid(row=0, column=1, sticky="e", padx=(5, 2))
+        bar.grid(row=0, column=2, sticky="e", padx=(2, 5))
+
+        row.grid_columnconfigure(0, weight=1)
+
+
+        bar.start()
+        current_process = None
+
+        def stop_bulk():
+            if current_process and current_process.poll() is None:
+                current_process.kill()
+                root.after(0, lambda: label.config(text="⛔ Stopped (Bulk Job)"))
+
+        stop_button.config(command=stop_bulk)
+
+        def bulk_worker():
+            nonlocal current_process
+            total = len(urls)
+            completed = tk.IntVar(value=0)
+
+            def update_progress():
+                percent = int((completed.get() / total) * 100)
+                bar.config(mode="determinate", value=percent)
+
+            for i, url in enumerate(urls, start=1):
+                cmd, resolved_tool = build_command(tool, url, base)
+                if cmd is None:
+                    continue
+
+                label_text = f"⏳ [{i}/{total}] {tool} ({resolved_tool}): {url}" if tool == "Automatic" else f"⏳ [{i}/{total}] {tool}: {url}"
+                root.after(0, lambda text=label_text: label.config(text=text))
+
+                try:
+                    process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, bufsize=1)
+                    current_process = process
+
+                    for line in process.stdout:
+                        if line.strip():
+                            root.after(0, lambda l=line.strip(): log_to_console(l))
+                    for line in process.stderr:
+                        if line.strip():
+                            root.after(0, lambda l=line.strip(): log_to_console(l))
+
+                    process.wait()
+
+                    with open(log_path, "a") as f:
+                        f.write(f"{tool} ({resolved_tool}): {url}\n")
+
+                    if process.returncode != 0:
+                        root.after(0, lambda: messagebox.showerror("Download Failed", f"❌ {tool} failed:\n{url}"))
+
+                except Exception as e:
+                    err = f"❌ Exception: {e}\n{url}"
+                    root.after(0, lambda: [
+                        label.config(text="❌ Exception"),
+                        messagebox.showerror("Download Error", err),
+                        log_to_console(err)
+                    ])
+
+                completed.set(completed.get() + 1)
+                root.after(0, update_progress)
+                time.sleep(5)
+
+            root.after(0, lambda: [
+                bar.stop(),
+                bar.config(mode="determinate", value=100),
+                stop_button.grid_forget(),  # Hide stop button at the end
+                label.config(text=f"✅ All {total} downloads completed."),
+                scroll_status_to_bottom()
+            ])
+
+        threading.Thread(target=bulk_worker, daemon=True).start()
+
+    else:
+        run_single_download(urls[0], tool)
+
+
+
+def toggle_bulk_mode():
+    for widget in url_input_frame.winfo_children():
+        widget.pack_forget()
+
+    if bulk_mode.get():
+        url_box.pack(fill=tk.X)
+        current_width = root.winfo_width()
+        current_height = root.winfo_height()
+        root.geometry(f"{current_width}x{current_height + 50}")
+    else:
+        url_entry.pack(fill=tk.X)
+        current_width = root.winfo_width()
+        current_height = root.winfo_height()
+        root.geometry(f"{current_width}x{max(current_height - 50, 400)}")
+
 
 def on_exit():
     if any(t.is_alive() for t in active_threads):
@@ -258,29 +433,47 @@ def on_theme_change(event):
     root.destroy()
     os.execl(sys.executable, sys.executable, *sys.argv)
 
-# Load config
+# --- INIT ---
 config = load_config()
 theme = config.get("theme", DEFAULT_THEME)
-ensure_ytdlp_config()
 automatic_map = load_automatic_mapping()
+ensure_ytdlp_config()
 
-# GUI SETUP
+# GUI
 root = tb.Window(themename=theme)
 root.title("FeliciaDL")
 root.geometry("1000x600")
 root.protocol("WM_DELETE_WINDOW", on_exit)
+resize_callbacks = []
+resize_after_id = None
+
+def debounced_resize_handler(event):
+    global resize_after_id
+    if resize_after_id:
+        root.after_cancel(resize_after_id)
+    resize_after_id = root.after(150, lambda: [cb() for cb in resize_callbacks])
+
+root.bind("<Configure>", debounced_resize_handler)
+resize_after_id = None
+
+def debounced_resize_handler(event):
+    global resize_after_id
+    if resize_after_id:
+        root.after_cancel(resize_after_id)
+    resize_after_id = root.after(150, lambda: [cb() for cb in resize_callbacks])
+
+root.bind("<Configure>", debounced_resize_handler)
 
 try:
     root.iconphoto(False, tk.PhotoImage(file=APP_ICON_PATH))
-except:
-    pass
+except: pass
 
 download_dir = tk.StringVar(value=config["download_dir"])
+bulk_mode = tk.BooleanVar(value=False)
 
 main_frame = tb.Frame(root, padding=10)
 main_frame.pack(fill=tk.BOTH, expand=True)
 
-# Theme selector + Config buttons
 theme_frame = ttk.Frame(main_frame)
 theme_frame.pack(anchor="w", pady=(0, 10))
 ttk.Label(theme_frame, text="Theme:").pack(side=tk.LEFT)
@@ -291,7 +484,6 @@ theme_selector.bind("<<ComboboxSelected>>", on_theme_change)
 ttk.Button(theme_frame, text="Open Config Folder", command=open_config_folder).pack(side=tk.LEFT, padx=10)
 ttk.Button(theme_frame, text="Open Logs", command=lambda: open_folder(os.path.join(download_dir.get(), "log"))).pack(side=tk.LEFT)
 
-# Layout
 content_frame = ttk.Frame(main_frame)
 content_frame.pack(fill=tk.BOTH, expand=True)
 
@@ -301,22 +493,18 @@ left_frame.pack(side=tk.LEFT, fill=tk.Y, padx=10, pady=10)
 right_frame = ttk.Frame(content_frame)
 right_frame.pack(side=tk.RIGHT, fill=tk.BOTH, expand=True, padx=10, pady=10)
 
-# Logo + Links under logo
+# Logo + Links
 try:
     logo_img = tk.PhotoImage(file=APP_LOGO_PATH)
     scaled_logo = logo_img.subsample(4, 4)
     tk.Label(left_frame, image=scaled_logo).pack(anchor="n")
-except:
-    pass
-
+except: pass
 link_frame = ttk.Frame(left_frame)
 link_frame.pack(pady=5)
-yt_link = ttk.Label(link_frame, text="Supported sites (yt-dlp)", foreground="blue", cursor="hand2")
-yt_link.pack(pady=2)
-yt_link.bind("<Button-1>", lambda e: open_link("https://github.com/yt-dlp/yt-dlp/blob/master/supportedsites.md"))
-gallery_link = ttk.Label(link_frame, text="Supported sites (gallery-dl)", foreground="blue", cursor="hand2")
-gallery_link.pack()
-gallery_link.bind("<Button-1>", lambda e: open_link("https://github.com/mikf/gallery-dl/blob/master/docs/supportedsites.md"))
+ttk.Label(link_frame, text="Supported sites (yt-dlp)", foreground="blue", cursor="hand2").pack(pady=2)
+yt_link = ttk.Label(link_frame, text="Supported sites (gallery-dl)", foreground="blue", cursor="hand2")
+yt_link.pack()
+yt_link.bind("<Button-1>", lambda e: open_link("https://github.com/mikf/gallery-dl/blob/master/docs/supportedsites.md"))
 
 # Controls
 ttk.Label(right_frame, text="Select Tool:").pack(anchor="w")
@@ -327,8 +515,14 @@ tool_selector.set("Automatic")
 tool_selector.pack(fill=tk.X)
 
 ttk.Label(right_frame, text="Enter URL:").pack(anchor="w", pady=(10, 0))
-url_entry = ttk.Entry(right_frame)
-url_entry.pack(fill=tk.X)
+url_input_frame = ttk.Frame(right_frame)
+url_input_frame.pack(fill=tk.X)
+
+url_entry = ttk.Entry(url_input_frame)
+url_box = tk.Text(url_input_frame, height=4, wrap="word")
+url_entry.pack(fill=tk.X)  # start with single-line entry visible
+
+ttk.Checkbutton(right_frame, text="Bulk Mode", variable=bulk_mode, command=toggle_bulk_mode).pack(anchor="w", pady=(5, 5))
 
 url_btn_frame = ttk.Frame(right_frame)
 url_btn_frame.pack(anchor="w", pady=8)
@@ -341,7 +535,23 @@ ttk.Entry(folder_frame, textvariable=download_dir).pack(side=tk.LEFT, fill=tk.X,
 ttk.Button(folder_frame, text="Change", command=browse_folder).pack(side=tk.LEFT, padx=5)
 ttk.Button(folder_frame, text="Reset", command=reset_folder).pack(side=tk.LEFT)
 
-output_box = tk.Text(right_frame, height=12, state=tk.DISABLED)
+# Console output
+output_box = tk.Text(right_frame, height=10, state=tk.DISABLED)
 output_box.pack(fill=tk.BOTH, expand=True)
+
+# Scrollable status frame under output_box (50% height of log)
+status_frame = ttk.Frame(right_frame)
+status_frame.pack(fill=tk.BOTH, expand=False, pady=(5, 0), ipady=5)
+
+status_canvas = tk.Canvas(status_frame, height=150)
+status_scrollbar = ttk.Scrollbar(status_frame, orient="vertical", command=status_canvas.yview)
+status_list = ttk.Frame(status_canvas)
+
+status_list.bind("<Configure>", lambda e: status_canvas.configure(scrollregion=status_canvas.bbox("all")))
+status_canvas.create_window((0, 0), window=status_list, anchor="nw")
+status_canvas.configure(yscrollcommand=status_scrollbar.set)
+
+status_canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+status_scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
 
 root.mainloop()

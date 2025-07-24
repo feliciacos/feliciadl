@@ -1,0 +1,8 @@
+FIXES
+rescaling of application window (so it always looks similar and fancy)
+
+
+TESTING TODO
+> ARCH Installing
+> Ubuntu testing maybe?
+   > python3 pip commands gaan dood in ubuntu
