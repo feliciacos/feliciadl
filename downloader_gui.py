@@ -147,7 +147,7 @@ def run_single_download(input_url, tool, sync=False, on_finish=None):
     root.after(100, scroll_status_to_bottom)
 
     # Grid layout with fixed width label and fixed right-aligned bar+button
-    outer_row.grid_columnconfigure(0, weight=1)  # Let column 0 (label) expand
+    outer_row.grid_columnconfigure(0, weight=1)
     outer_row.grid_columnconfigure(1, weight=0)
     outer_row.grid_columnconfigure(2, weight=0)
 
@@ -156,7 +156,7 @@ def run_single_download(input_url, tool, sync=False, on_finish=None):
         text=f"⏳ {tool}: {input_url}",
         anchor="w",
         justify="left",
-        width=67  # Adjust width based on your app’s size/font
+        width=67
     )
     resize_callbacks.append(lambda: update_label_width(status_label, outer_row))
     stop_button = ttk.Button(outer_row, text="Stop")
@@ -198,7 +198,6 @@ def run_single_download(input_url, tool, sync=False, on_finish=None):
                     def preserve_button_space():
                         placeholder = ttk.Label(outer_row, text="", width=6)
                         placeholder.grid(row=0, column=1, sticky="e", padx=(5, 2))
-
                     root.after(0, lambda: [stop_button.destroy(), preserve_button_space()])
 
             stop_button.config(command=stop_process)
@@ -212,6 +211,7 @@ def run_single_download(input_url, tool, sync=False, on_finish=None):
 
             process.wait()
             root.after(0, bar.stop)
+
             def preserve_button_space():
                 placeholder = ttk.Label(outer_row, text="", width=6)
                 placeholder.grid(row=0, column=1, sticky="e", padx=(5, 2))
@@ -248,17 +248,15 @@ def run_single_download(input_url, tool, sync=False, on_finish=None):
             active_threads.remove(threading.current_thread())
         if on_finish:
             on_finish()
-
+        if not any(t.is_alive() for t in active_threads):
+            root.after(0, unlock_controls)
+        
     if sync:
         thread_target()
     else:
         t = threading.Thread(target=thread_target, daemon=True)
         active_threads.append(t)
         t.start()
-        
-    if not any(t.is_alive() for t in active_threads):
-        root.after(0, unlock_controls)
-
 
 def run_download():
     lock_controls()
@@ -305,16 +303,19 @@ def run_download():
 
         bar.start()
         current_process = None
+        cancelled = False
 
         def stop_bulk():
+            nonlocal cancelled
+            cancelled = True
             if current_process and current_process.poll() is None:
                 current_process.kill()
-                root.after(0, lambda: label.config(text="⛔ Stopped (Bulk Job)"))
+            root.after(0, lambda: label.config(text="⛔ Stopped (Bulk Job)"))
 
         stop_button.config(command=stop_bulk)
 
         def bulk_worker():
-            nonlocal current_process
+            nonlocal current_process, cancelled
             total = len(urls)
             completed = tk.IntVar(value=0)
 
@@ -323,9 +324,13 @@ def run_download():
                 bar.config(mode="determinate", value=percent)
 
             for i, url in enumerate(urls, start=1):
+                if cancelled:
+                    break
+
                 cmd, resolved_tool = build_command(tool, url, base)
                 if cmd is None:
                     continue
+
 
                 label_text = f"⏳ [{i}/{total}] {tool} ({resolved_tool}): {url}" if tool == "Automatic" else f"⏳ [{i}/{total}] {tool}: {url}"
                 root.after(0, lambda text=label_text: label.config(text=text))
@@ -365,16 +370,30 @@ def run_download():
                 bar.stop()
                 bar.config(mode="determinate", value=100)
                 stop_button.grid_forget()
-                label.config(text=f"✅ All {total} downloads completed.")
+                if cancelled:
+                    label.config(text=f"⛔ Bulk job cancelled at {completed.get()}/{total}.")
+                else:
+                    label.config(text=f"✅ All {total} downloads completed.")
                 scroll_status_to_bottom()
-                unlock_controls()
+                if threading.current_thread() in active_threads:
+                    active_threads.remove(threading.current_thread())
+                if not any(t.is_alive() for t in active_threads):
+                    unlock_controls()
+                # if if if if if if if else else else else else  deze zijn speciaal voor Thomas <3
 
             root.after(0, on_complete)
 
-        threading.Thread(target=bulk_worker, daemon=True).start()
+        bulk_thread = threading.Thread(target=bulk_worker, daemon=True)
+        active_threads.append(bulk_thread)
+        bulk_thread.start()
         
     else:
-        run_single_download(urls[0], tool, on_finish=unlock_controls)
+        def check_unlock():
+            if not any(t.is_alive() for t in active_threads):
+                unlock_controls()
+
+        run_single_download(urls[0], tool, on_finish=check_unlock)
+
 
 def toggle_bulk_mode():
     for widget in url_input_frame.winfo_children():
@@ -462,15 +481,6 @@ root.title("FeliciaDL")
 root.geometry("1000x600")
 root.protocol("WM_DELETE_WINDOW", on_exit)
 resize_callbacks = []
-resize_after_id = None
-
-def debounced_resize_handler(event):
-    global resize_after_id
-    if resize_after_id:
-        root.after_cancel(resize_after_id)
-    resize_after_id = root.after(150, lambda: [cb() for cb in resize_callbacks])
-
-root.bind("<Configure>", debounced_resize_handler)
 resize_after_id = None
 
 def debounced_resize_handler(event):
