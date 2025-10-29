@@ -19,6 +19,11 @@ Whether you're a CLI nerd or prefer clicking buttons, FeliciaDL has you covered.
 - Fully native Linux shell integration (Start Menu & launcher)
 
 ---
+## Notes
+Press open config folder and add extra parameters there like 
+--cookies cookies.txt 
+--cookies-from-browser firefox/chrome/etc
+Otherwise youtube shorts or some other youtube content might not download and result in errors.
 
 ## Installation
 

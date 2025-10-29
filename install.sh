@@ -44,8 +44,11 @@ install_python_tools() {
   echo -e "\n📦 Installing Python apps with pipx..."
   pipx ensurepath
 
-  pipx install gallery-dl || true
-  pipx install spotdl || true
+  echo "➡️ Upgrading or installing gallery-dl..."
+  pipx upgrade gallery-dl || pipx install --force gallery-dl
+
+  echo "➡️ Upgrading or installing spotdl..."
+  pipx upgrade spotdl || pipx install --force spotdl
 
   echo -e "\n📦 Installing ttkbootstrap into user site..."
   sudo python3 -m pip install ttkbootstrap --break-system-packages
@@ -114,15 +117,14 @@ create_config_files_if_missing() {
   fi
 
   if [ -f "$AUTOMATIC_FILE_SRC" ]; then
-    if [ ! -f "$AUTOMATIC_FILE_DEST" ]; then
-      echo "Copying automatic.json to config directory..."
-      cp "$AUTOMATIC_FILE_SRC" "$AUTOMATIC_FILE_DEST"
-    else
-      echo "✔ automatic.json already exists."
-    fi
+    echo "Copying automatic.json to config directory (overwrite)…"
+    cp -f "$AUTOMATIC_FILE_SRC" "$AUTOMATIC_FILE_DEST"
+    # If you run the installer via sudo and want the file owned by the real user:
+    [ -n "$SUDO_USER" ] && chown "$SUDO_USER:$SUDO_USER" "$AUTOMATIC_FILE_DEST" || true
   else
     echo "⚠️  automatic.json not found in source directory, skipping copy."
   fi
+
 }
 
 print_footer() {

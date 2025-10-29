@@ -10,6 +10,8 @@ import webbrowser
 import threading
 import sys
 import time
+from tkinter import font
+import re
 
 CONFIG_DIR = os.path.expanduser("~/.config/feliciadl")
 CONFIG_PATH = os.path.join(CONFIG_DIR, "config.json")
@@ -20,6 +22,111 @@ APP_ICON_PATH = "/opt/feliciadl/assets/icon.png"
 APP_LOGO_PATH = "/opt/feliciadl/assets/logo.png"
 DEFAULT_THEME = "flatly"
 
+# define custom fonts for the status lines
+status_font_main = ("TkDefaultFont", 10, "bold")
+status_font_version = ("TkDefaultFont", 9, "italic")
+status_color_version = "#888888"  # grey tone
+
+
+def _run(cmd, timeout=20):
+    try:
+        p = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
+        return ((p.stdout or "") + (p.stderr or "")).strip()
+    except Exception as e:
+        return f"__ERR__ {e}"
+
+def _set_label(main_lbl, ver_lbl, title, version, up_to_date=True, note=None):
+    color = "green" if up_to_date else "red"
+    main_lbl.config(text=f"{title} {'Up-to-date' if up_to_date else 'Out-of-date'}", foreground=color)
+    ver_text = f"version {version}" + (f" ({note})" if note else "")
+    ver_lbl.config(text=ver_text)
+
+def _norm_ver(s: str) -> str:
+    """Normalize a version token like 'stable@2025.10.22.' -> '2025.10.22'"""
+    s = s.strip().strip(".").strip(",")
+    if "@" in s:
+        s = s.split("@", 1)[-1]
+    return s
+
+def check_ytdlp():
+    """Check YT-DLP version and update status."""
+    ver_out = _run(["yt-dlp", "--version"])
+    version = (ver_out.splitlines()[0] if ver_out else "unknown").strip()
+
+    upd_out = _run(["yt-dlp", "--update"])
+    low = upd_out.lower()
+
+    # common "up to date" phrasings (with/without hyphen)
+    if ("up to date" in low) or ("up-to-date" in low) or ("is up to date" in low) or ("is up-to-date" in low):
+        root.after(0, lambda: _set_label(yt_status_label, yt_version_label, "YT-DLP", version, True))
+        return
+
+    # parse: "Latest version: stable@2025.10.22 ..."
+    import re
+    m = re.search(r"latest version:\s*([^\s]+)", low)
+    if m:
+        latest = _norm_ver(m.group(1))
+        if latest == version or version.endswith(latest) or latest.endswith(version):
+            root.after(0, lambda: _set_label(yt_status_label, yt_version_label, "YT-DLP", version, True))
+        else:
+            root.after(0, lambda: _set_label(yt_status_label, yt_version_label, "YT-DLP", version, False, note=f"latest {latest}"))
+        return
+
+    # fallback: show version without "(status unknown)"
+    root.after(0, lambda: _set_label(yt_status_label, yt_version_label, "YT-DLP", version, True))
+
+def check_gallerydl():
+    """Check Gallery-DL version and update status."""
+    ver_out = _run(["gallery-dl", "--version"])
+    version = (ver_out.splitlines()[0] if ver_out else "unknown").strip()
+
+    upd_out = _run(["gallery-dl", "--update"])
+    low = upd_out.lower()
+
+    # typical: "[update][info] gallery-dl is up to date (1.30.10)"
+    if ("up to date" in low) or ("up-to-date" in low):
+        root.after(0, lambda: _set_label(gallery_status_label, gallery_version_label, "Gallery-DL", version, True))
+        return
+
+    # sometimes: "new version available: x.y.z" / "update available: x.y.z"
+    import re
+    m = re.search(r"(new version available|update available)[:\s]+([v]?\d[0-9a-zA-Z\.\-\+]*)", low)
+    if m:
+        latest = _norm_ver(m.group(2))
+        root.after(0, lambda: _set_label(gallery_status_label, gallery_version_label, "Gallery-DL", version, False, note=f"latest {latest}"))
+        return
+
+    # fallback: show version without "(status unknown)"
+    root.after(0, lambda: _set_label(gallery_status_label, gallery_version_label, "Gallery-DL", version, True))
+
+def check_spotdl():
+    ver_out = _run(["spotdl", "--version"])
+    first = (ver_out.splitlines()[0] if ver_out else "").strip()
+    version = (first.split()[-1].strip(",") if "version" in first.lower() else first) or "unknown"
+
+    upd_out = _run(["spotdl", "--check-for-updates"], timeout=30)
+    avail = None
+    for ln in upd_out.splitlines():
+        if ln.lower().startswith("new version available"):
+            # e.g. "New version available: v4.4.3."
+            avail = ln.split(":", 1)[-1].strip().strip(".")
+            break
+
+    if avail:
+        root.after(0, lambda: _set_label(
+            spot_status_label, spot_version_label,
+            "SpotDL", version, False, note=f"latest {avail}"
+        ))
+    else:
+        root.after(0, lambda: _set_label(
+            spot_status_label, spot_version_label,
+            "SpotDL", version, True
+        ))
+
+
+def refresh_tool_statuses_once():
+    # run in background so UI loads instantly
+    threading.Thread(target=lambda: [check_ytdlp(), check_gallerydl(), check_spotdl()], daemon=True).start()
 
 def load_config():
     try:
@@ -526,13 +633,59 @@ try:
     logo_img = tk.PhotoImage(file=APP_LOGO_PATH)
     scaled_logo = logo_img.subsample(4, 4)
     tk.Label(left_frame, image=scaled_logo).pack(anchor="n")
-except: pass
+except:
+    pass
+
+# NEW: separator above the two links
+links_top_sep = ttk.Separator(left_frame)
+links_top_sep.pack(fill=tk.X, pady=(6, 6))
+
+# Links (styled like the grey "version" text, non-italic, left-aligned)
+link_font = ("TkDefaultFont", 9)  # non-italic to match your version line
+link_color = status_color_version  # "#888888"
+
 link_frame = ttk.Frame(left_frame)
-link_frame.pack(pady=5)
-ttk.Label(link_frame, text="Supported sites (yt-dlp)", foreground="blue", cursor="hand2").pack(pady=2)
-yt_link = ttk.Label(link_frame, text="Supported sites (gallery-dl)", foreground="blue", cursor="hand2")
-yt_link.pack()
-yt_link.bind("<Button-1>", lambda e: open_link("https://github.com/mikf/gallery-dl/blob/master/docs/supportedsites.md"))
+link_frame.pack(anchor="w", pady=4, fill=tk.X)
+
+yt_sites = ttk.Label(
+    link_frame,
+    text="Supported sites (yt-dlp)",
+    font=link_font,
+    foreground=link_color,
+    cursor="hand2",
+    anchor="w",
+)
+yt_sites.pack(anchor="w", pady=2)
+yt_sites.bind("<Button-1>", lambda e: open_link("https://github.com/yt-dlp/yt-dlp/blob/master/supportedsites.md"))
+
+gd_sites = ttk.Label(
+    link_frame,
+    text="Supported sites (gallery-dl)",
+    font=link_font,
+    foreground=link_color,
+    cursor="hand2",
+    anchor="w",
+)
+gd_sites.pack(anchor="w", pady=2)
+gd_sites.bind("<Button-1>", lambda e: open_link("https://github.com/mikf/gallery-dl/blob/master/docs/supportedsites.md"))
+
+# Version / update status labels
+status_links_sep = ttk.Separator(left_frame)
+status_links_sep.pack(fill=tk.X, pady=(8, 6))
+
+def make_status_pair(parent, title):
+    frame = ttk.Frame(parent)
+    frame.pack(anchor="w", pady=(0, 4), fill=tk.X)
+    main_label = ttk.Label(frame, text=f"{title} Checking...", font=status_font_main, anchor="w")
+    main_label.pack(anchor="w")
+    version_label = ttk.Label(frame, text="version …", font=status_font_version, foreground=status_color_version, anchor="w")
+    version_label.pack(anchor="w")
+    return main_label, version_label
+
+yt_status_label, yt_version_label = make_status_pair(left_frame, "YT-DLP")
+gallery_status_label, gallery_version_label = make_status_pair(left_frame, "Gallery-DL")
+spot_status_label, spot_version_label = make_status_pair(left_frame, "SpotDL")
+
 
 # Controls
 ttk.Label(right_frame, text="Select Tool:").pack(anchor="w")
@@ -587,5 +740,8 @@ status_canvas.configure(yscrollcommand=status_scrollbar.set)
 
 status_canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
 status_scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+
+# initial status fetch (non-blocking)
+refresh_tool_statuses_once()
 
 root.mainloop()
