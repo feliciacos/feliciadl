@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import argparse
+import sys
 import json
 import os
 import shutil
@@ -8,7 +9,7 @@ from datetime import datetime
 from pathlib import Path
 
 APP_NAME = "FeliciaDL"
-BASE_DIR = Path(__file__).resolve().parent
+BASE_DIR = Path(sys.executable).resolve().parent if getattr(sys, "frozen", False) else Path(__file__).resolve().parent
 BIN_DIR = BASE_DIR / "bin"
 
 APPDATA_DIR = Path(os.getenv("APPDATA", Path.home() / "AppData" / "Roaming"))

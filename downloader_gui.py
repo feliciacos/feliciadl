@@ -28,6 +28,25 @@ import urllib.request
 from pathlib import Path
 from tkinter import messagebox
 
+import subprocess
+import sys
+
+IS_WINDOWS = sys.platform.startswith("win")
+
+def _no_window_kwargs():
+    if not IS_WINDOWS:
+        return {}
+
+    kwargs = {}
+    kwargs["creationflags"] = subprocess.CREATE_NO_WINDOW
+
+    startupinfo = subprocess.STARTUPINFO()
+    startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+    startupinfo.wShowWindow = subprocess.SW_HIDE
+    kwargs["startupinfo"] = startupinfo
+
+    return kwargs
+
 GITHUB_RELEASES = {
     "yt-dlp": "yt-dlp/yt-dlp",
     "gallery-dl": "mikf/gallery-dl",
@@ -82,12 +101,13 @@ def _get_local_version(tool_name: str, exe_path: str | None) -> str | None:
             text=True,
             timeout=20,
             shell=False,
+            **_no_window_kwargs(),
         )
         text = (proc.stdout or proc.stderr or "").strip().splitlines()[0].strip()
         return _normalize_version(text)
     except Exception:
         return None
-
+    
 def _select_asset_for_tool(tool: str, release: dict) -> dict | None:
     assets = release.get("assets", []) or []
     machine = platform.machine().lower()
@@ -259,7 +279,7 @@ def start_update_downloads(updates):
 
     threading.Thread(target=worker, daemon=True).start()
 APP_NAME = "FeliciaDL"
-BASE_DIR = Path(__file__).resolve().parent
+BASE_DIR = Path(sys.executable).resolve().parent if getattr(sys, "frozen", False) else Path(__file__).resolve().parent
 BIN_DIR = BASE_DIR / "bin"
 
 APPDATA_DIR = Path(os.getenv("APPDATA", Path.home() / "AppData" / "Roaming"))
@@ -418,6 +438,7 @@ def run_capture(cmd, timeout=20):
             text=True,
             timeout=timeout,
             shell=False,
+            **_no_window_kwargs(),
         )
         return (p.stdout or "") + (p.stderr or "")
     except FileNotFoundError:
@@ -790,6 +811,7 @@ def kill_process_tree(proc):
             capture_output=True,
             text=True,
             check=False,
+            **_no_window_kwargs(),
         )
     except Exception:
         try:
@@ -846,6 +868,7 @@ def run_process_for_url(url, tool, base, prefix=None, total=None, index=None):
             bufsize=1,
             shell=False,
             env=build_runtime_env(),
+            **_no_window_kwargs(),
         )
         process_holder["process"] = process
 
