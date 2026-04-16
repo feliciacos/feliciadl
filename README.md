@@ -1,3 +1,5 @@
+<img width="1002" height="639" alt="image" src="https://github.com/user-attachments/assets/924bc891-7dbd-4cf1-a56b-7eda375f9708" />
+
 # FeliciaDL (Windows)
 
 **FeliciaDL** is a simple graphical **and** command-line downloader for Windows & Linux. It wraps powerful tools like `yt-dlp`, `gallery-dl`, and `spotdl` into a unified, user-friendly interface.
