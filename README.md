@@ -25,6 +25,7 @@ Press **Open Config Folder** and add extra parameters there, such as:
 ```txt
 --cookies cookies.txt
 --cookies-from-browser firefox
+```
 
 ## Installation
 Windows 11 / Windows 10
