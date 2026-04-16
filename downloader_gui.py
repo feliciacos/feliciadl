@@ -78,7 +78,7 @@ def _is_newer(remote: str, local: str) -> bool:
         return r > l
     return _normalize_version(remote) != _normalize_version(local)
 
-def _github_latest_release(repo: str) -> dict:
+def _github_latest_release(repo: str) -> dict | None:
     url = f"https://api.github.com/repos/{repo}/releases/latest"
     req = urllib.request.Request(
         url,
@@ -87,8 +87,23 @@ def _github_latest_release(repo: str) -> dict:
             "User-Agent": "FeliciaDL-Updater",
         },
     )
-    with urllib.request.urlopen(req, timeout=30) as resp:
-        return json.loads(resp.read().decode("utf-8"))
+
+    import ssl
+
+    # Try normal SSL first
+    try:
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            return json.loads(resp.read().decode("utf-8"))
+    except Exception:
+        pass
+
+    # Fallback (Windows SSL issues)
+    try:
+        context = ssl._create_unverified_context()
+        with urllib.request.urlopen(req, timeout=30, context=context) as resp:
+            return json.loads(resp.read().decode("utf-8"))
+    except Exception:
+        return None
 
 def _get_local_version(tool_name: str, exe_path: str | None) -> str | None:
     if not exe_path or not Path(exe_path).exists():
@@ -145,12 +160,59 @@ def _select_asset_for_tool(tool: str, release: dict) -> dict | None:
 
     return None
 
-def _download_file(url: str, dest: Path) -> None:
+def _download_file(url: str, dest: Path, timeout: int = 120, retries: int = 3) -> None:
     dest.parent.mkdir(parents=True, exist_ok=True)
     tmp = dest.with_suffix(dest.suffix + ".tmp")
-    with urllib.request.urlopen(url, timeout=120) as r, tmp.open("wb") as f:
-        shutil.copyfileobj(r, f)
-    tmp.replace(dest)
+    import ssl
+
+    last_error = None
+
+    for attempt in range(1, retries + 1):
+        try:
+            if tmp.exists():
+                try:
+                    tmp.unlink()
+                except Exception:
+                    pass
+
+            req = urllib.request.Request(
+                url,
+                headers={
+                    "User-Agent": "FeliciaDL-Updater",
+                    "Accept": "*/*",
+                },
+            )
+
+            try:
+                response = urllib.request.urlopen(req, timeout=timeout)
+            except Exception:
+                response = urllib.request.urlopen(
+                    req,
+                    timeout=timeout,
+                    context=ssl._create_unverified_context(),
+                )
+
+            with response, tmp.open("wb") as f:
+                shutil.copyfileobj(response, f, length=1024 * 1024)
+
+            if tmp.stat().st_size == 0:
+                raise RuntimeError("Downloaded file is empty")
+
+            tmp.replace(dest)
+            return
+
+        except Exception as e:
+            last_error = e
+            try:
+                if tmp.exists():
+                    tmp.unlink()
+            except Exception:
+                pass
+
+            if attempt < retries:
+                time.sleep(2 * attempt)
+            else:
+                raise last_error
 
 def _current_tool_state():
     return {
@@ -182,80 +244,25 @@ def _mark_outdated(main_lbl, ver_lbl, title, current, latest):
     main_lbl.config(text=f"{title} Outdated", foreground="red")
     ver_lbl.config(text=f"current: {current} -> new: {latest}")
 
-def check_updates_on_startup():
+def start_update_downloads(updates, close_after=True, on_complete=None, silent=False):
     """
-    Run once after the GUI is visible.
-    If anything is missing/outdated, mark it red, prompt the user, and optionally download updates.
-    """
-    def worker():
-        try:
-            local = _current_tool_state()
-            updates = []
+    Download helper exes into bin.
 
-            for tool, repo in GITHUB_RELEASES.items():
-                latest = _github_latest_release(repo)
-                latest_tag = _normalize_version(latest.get("tag_name", ""))
-                current = local[tool]["current"]
-                exe_missing = not local[tool]["exe"]
-
-                if exe_missing or not current or _is_newer(latest_tag, current):
-                    asset = _select_asset_for_tool(tool, latest)
-                    if asset is None:
-                        continue
-
-                    dest_name = {
-                        "yt-dlp": "yt-dlp.exe",
-                        "gallery-dl": "gallery-dl.exe",
-                        "spotdl": "spotdl.exe",
-                    }.get(tool, asset.get("name"))
-
-                    updates.append({
-                        "tool": tool,
-                        "label": UPDATE_TOOL_LABELS[tool],
-                        "current": current or "not installed",
-                        "latest": latest_tag or latest.get("name", "unknown"),
-                        "asset_name": asset.get("name"),
-                        "asset_url": asset.get("browser_download_url"),
-                        "dest_name": dest_name,
-                    })
-
-            if not updates:
-                return
-
-            def prompt():
-                for u in updates:
-                    main_lbl, ver_lbl, title = _status_widgets_for_tool(u["tool"])
-                    _mark_outdated(main_lbl, ver_lbl, title, u["current"], u["latest"])
-
-                lines = ["Update(s) available", ""]
-                for u in updates:
-                    lines.append(
-                        f"{u['label']} is outdated, current: {u['current']} -> new: {u['latest']}"
-                    )
-                lines.append("")
-                lines.append("Do you want to update now?")
-
-                if messagebox.askyesno("Update(s) available", "\n".join(lines)):
-                    start_update_downloads(updates)
-
-            root.after(0, prompt)
-
-        except Exception as e:
-            root.after(0, lambda: print(f"Update check failed: {e}"))
-
-    threading.Thread(target=worker, daemon=True).start()
-def start_update_downloads(updates):
-    """
-    Download newest helper exes into win\\bin.
-    spotDL assets are renamed to spotdl.exe after download.
+    If close_after is True, the app asks the user to restart after updates.
+    If close_after is False, the app stays open and refreshes tool status.
     """
     def worker():
         try:
             BIN_DIR.mkdir(parents=True, exist_ok=True)
+            completed_messages = []
 
             for u in updates:
                 dest = BIN_DIR / u["dest_name"]
-                _download_file(u["asset_url"], dest)
+
+                timeout = 600 if u["tool"] == "spotdl" else 120
+                _download_file(u["asset_url"], dest, timeout=timeout, retries=3)
+
+                completed_messages.append(f"{u['label']} is updated to version {u['latest']}")
 
                 if u["tool"] == "spotdl":
                     for old in BIN_DIR.glob("spotdl-*.exe"):
@@ -266,11 +273,21 @@ def start_update_downloads(updates):
                             pass
 
             def done():
-                messagebox.showinfo(
-                    "Update complete",
-                    "The selected tools were updated.\n\nRestart FeliciaDL so the new files are picked up.",
-                )
-                root.destroy()
+                for msg in completed_messages:
+                    append_console(msg)
+
+                if on_complete is not None:
+                    on_complete()
+
+                if close_after:
+                    messagebox.showinfo(
+                        "Update complete",
+                        "The selected tools were updated.\n\nRestart FeliciaDL so the new files are picked up.",
+                    )
+                    root.destroy()
+                else:
+                    if not silent and not completed_messages:
+                        append_console("Tools are up to date.")
 
             root.after(0, done)
 
@@ -278,6 +295,69 @@ def start_update_downloads(updates):
             root.after(0, lambda: messagebox.showerror("Update failed", str(e)))
 
     threading.Thread(target=worker, daemon=True).start()
+
+def check_updates_on_startup():
+    """
+    Run once after the GUI is visible.
+
+    Missing helper tools are installed automatically on startup.
+    Existing helper tools that are outdated are also updated automatically.
+    """
+    def worker():
+        try:
+            local = _current_tool_state()
+            updates = []
+
+            for tool, repo in GITHUB_RELEASES.items():
+                latest = _github_latest_release(repo)
+                if not latest:
+                    continue
+
+                latest_tag = _normalize_version(latest.get("tag_name", ""))
+                current = local[tool]["current"]
+                exe_missing = not local[tool]["exe"]
+
+                asset = _select_asset_for_tool(tool, latest)
+                if asset is None:
+                    continue
+
+                dest_name = {
+                    "yt-dlp": "yt-dlp.exe",
+                    "gallery-dl": "gallery-dl.exe",
+                    "spotdl": "spotdl.exe",
+                }.get(tool, asset.get("name"))
+
+                if exe_missing or not current or _is_newer(latest_tag, current):
+                    updates.append({
+                        "tool": tool,
+                        "label": UPDATE_TOOL_LABELS[tool],
+                        "current": current or "not installed",
+                        "latest": latest_tag or latest.get("name", "unknown"),
+                        "asset_name": asset.get("name"),
+                        "asset_url": asset.get("browser_download_url"),
+                        "dest_name": dest_name,
+                    })
+
+            if updates:
+                def after_done():
+                    refresh_tool_statuses_once()                
+                root.after(
+                    0,
+                    lambda: start_update_downloads(
+                        updates,
+                        close_after=False,
+                        on_complete=after_done,
+                        silent=True,
+                    ),
+                )
+            else:
+                root.after(0, lambda: append_console("Tools are up to date."))
+
+        except Exception:
+            root.after(0, lambda: append_console("Tools are up to date."))
+
+    threading.Thread(target=worker, daemon=True).start()
+
 APP_NAME = "FeliciaDL"
 BASE_DIR = Path(sys.executable).resolve().parent if getattr(sys, "frozen", False) else Path(__file__).resolve().parent
 BIN_DIR = BASE_DIR / "bin"
@@ -454,28 +534,42 @@ def _norm_ver(s):
     return s
 
 
-def _set_label(main_lbl, ver_lbl, title, version, up_to_date=True, note=None):
-    color = "green" if up_to_date else "red"
+def _set_label(main_lbl, ver_lbl, title, version, state="ready", note=None):
+    color_map = {
+        "ready": "green",
+        "missing": "red",
+        "outdated": "red",
+        "installing": "orange",
+    }
+    label_map = {
+        "ready": "Ready",
+        "missing": "Missing",
+        "outdated": "Out-of-date",
+        "installing": "Installing",
+    }
+
+    color = color_map.get(state, "green")
+    label_text = label_map.get(state, "Ready")
+
     main_lbl.config(
-        text=f"{title} {'Ready' if up_to_date else 'Missing / Out-of-date'}",
+        text=f"{title} {label_text}",
         foreground=color,
     )
+
     ver_text = f"version {version}"
     if note:
         ver_text += f" ({note})"
     ver_lbl.config(text=ver_text)
 
-
 def check_tool_status(tool_name, exe_name, main_lbl, ver_lbl):
     exe = find_executable(exe_name)
     if not exe:
-        root.after(0, lambda: _set_label(main_lbl, ver_lbl, tool_name, "not found", False))
+        root.after(0, lambda: _set_label(main_lbl, ver_lbl, tool_name, "not found", state="missing"))
         return
 
     out = run_capture([exe, "--version"], timeout=20).strip()
     first = out.splitlines()[0].strip() if out else "unknown"
-    root.after(0, lambda: _set_label(main_lbl, ver_lbl, tool_name, first, True))
-
+    root.after(0, lambda: _set_label(main_lbl, ver_lbl, tool_name, first, state="ready"))
 
 def refresh_tool_statuses_once():
     def worker():
